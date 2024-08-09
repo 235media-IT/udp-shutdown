@@ -24,6 +24,7 @@ Config::Config() {
     CSimpleIniA::TNamesDepend keys;
     ini.GetAllKeys("LOGFILES_PATHS", keys);
 
-    this->port = std::stoi(ini.GetValue("config", "port", "default"));
-    this->shutdown_cmd = std::string(ini.GetValue("config", "shutdown_command", "default"));
+    this->port = std::stoi(ini.GetValue("config", "port", "2350"));
+    this->shutdown_cmd = std::string(ini.GetValue("config", "shutdown_command", "shutdown"));
+    this->reboot_cmd = std::string(ini.GetValue("config", "reboot_command", "reboot"));
 }

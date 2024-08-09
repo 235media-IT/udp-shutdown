@@ -17,51 +17,17 @@
 
 #define BUFLEN 512 // Max length of buffer
 
-HMENU hPopupMenu;
-NOTIFYICONDATA nid;
-HWND hConsoleWnd;
 bool consoleVisible = true;
 
-LRESULT CALLBACK Wndproc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-    case WM_USER + 1: // Tray icon event
-        if (lParam == WM_RBUTTONDOWN) { // Right-click event
-            POINT pt;
-            GetCursorPos(&pt);
-            SetForegroundWindow(hwnd);
-            HMENU hPopupMenu = CreatePopupMenu();
-            if (consoleVisible) {
-                AppendMenu(hPopupMenu, MF_STRING, 1, L"Hide Console");
-            }
-            else {
-                AppendMenu(hPopupMenu, MF_STRING, 2, L"Show Console");
-            }
-            AppendMenu(hPopupMenu, MF_STRING, 3, L"Exit");
-            TrackPopupMenu(hPopupMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
-            PostMessage(hwnd, WM_NULL, 0, 0);
-            DestroyMenu(hPopupMenu);
-        }
-        break;
-    case WM_COMMAND:
-        switch (wParam) {
-        case 1: // "Hide Console" menu item
-            ShowWindow(hConsoleWnd, SW_HIDE);
-            consoleVisible = false;
-            break;
-        case 2: // "Show Console" menu item
-            ShowWindow(hConsoleWnd, SW_SHOW);
-            consoleVisible = true;
-            break;
-        case 3: // "Exit" menu item
-            Shell_NotifyIcon(NIM_DELETE, &nid);
-            PostQuitMessage(0);
-            break;
-        }
-        break;
-    default:
-        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+// Function to check if a specific registry key exists
+bool IsVCredistInstalled(LPCWSTR keyPath) {
+    HKEY hKey;
+    LONG lRes = RegOpenKeyEx(HKEY_LOCAL_MACHINE, keyPath, 0, KEY_READ, &hKey);
+    if (lRes == ERROR_SUCCESS) {
+        RegCloseKey(hKey);
+        return true;
     }
-    return 0;
+    return false;
 }
 
 BOOL systemShutdown() {
@@ -73,20 +39,34 @@ BOOL systemShutdown() {
     exit(-10); // Planned Shutdown Code
 }
 
-DWORD WINAPI MessageLoopThread(LPVOID lpParam) {
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-    return 0;
+BOOL systemReboot() {
+    printf("[ INFO ] Rebooting Windows... ");
+    int result = WinExec("shutdown -f -r -t 0", SW_HIDE);
+    Sleep(500); // Works without this but it's safer to use sleep
+    exit(-10); // Planned Shutdown Code
 }
 
 int main() {
+
+    LPCWSTR vcRedist64 = L"SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64";
+
+    bool isVcRedistInstalled = IsVCredistInstalled(vcRedist64);
+
+    puts("235Media udp-shutdown\n\n");
+
+    if (isVcRedistInstalled) {
+        std::wcout << L"[ INFO ] Visual C++ 2015-2022 Redistributable (x64) is installed." << std::endl;
+    } else {
+        std::wcout << L"[ ERROR ] Visual C++ 2015-2022 Redistributable (x64) is NOT installed. Install it to use this application! " << std::endl;
+        while (1);
+    }
+
+
     int window = ShowWindow(GetConsoleWindow(), SW_MINIMIZE);
     // configure config
     Config *config = new Config();
     std::string shutdown_cmd = config->shutdown_cmd;
+    std::string reboot_cmd = config->reboot_cmd;
     int port = config->port;
 
     // setup socket
@@ -98,7 +78,7 @@ int main() {
 
     slen = sizeof(si_other);
 
-    puts("235Media udp-shutdown\n\n");
+    
 
     // Initialise winsock
     printf("[ INFO ] Initialising Winsock...\n");
@@ -122,10 +102,11 @@ int main() {
     // Bind
     if (bind(s, (struct sockaddr *)&server, sizeof(server)) == SOCKET_ERROR) {
         printf("[ ERR ] Bind failed with error code : %d", WSAGetLastError());
-        exit(EXIT_FAILURE);
+        // exit(EXIT_FAILURE);
     }
     printf("[ OK ] Bind done\n");
     printf("[ INFO ] Listening for shutdown command: \"%s\" on port :%i\n", shutdown_cmd.c_str(), port);
+    printf("[ INFO ] Listening for reboot command: \"%s\" on port :%i\n", reboot_cmd.c_str(), port);
     // keep listening for data
     while (1) {
         fflush(stdout);
@@ -147,6 +128,9 @@ int main() {
 
         if (strcmp(buf, shutdown_cmd.c_str()) == 0) {
             systemShutdown();
+        }
+        if (strcmp(buf, reboot_cmd.c_str()) == 0) {
+            systemReboot();
         }
     }
     closesocket(s);
